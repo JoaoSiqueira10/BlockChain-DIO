@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+// Importa os contratos básicos do ERC-721 e a extensão para URI (metadata)
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+// Importa o utilitário Counters para gerar IDs únicos automaticamente
+import "@openzeppelin/contracts/utils/Counters.sol";
+
+/**
+ * @title NinetailsNL
+ * @dev Um contrato de NFT (ERC-721) representando a coleção Ninetails.nl.
+ */
+contract NinetailsNL is ERC721URIStorage {
+    // Usa a biblioteca Counters para gerenciar a contagem de IDs de token
+    using Counters for Counters.Counter;
+    Counters.Counter private _tokenIds;
+
+    // Define o nome da coleção ("Ninetails.nl") e o símbolo do token ("NTNL")
+    constructor() ERC721("Ninetails.nl", "NTNL") {}
+
+    /**
+     * @dev Cria um novo NFT e o atribui ao endereço do destinatário.
+     * @param destinatario O endereço que receberá o novo NFT.
+     * @param tokenURI A URL que aponta para os metadados JSON do NFT (imagem, descrição, etc.).
+     * @return O ID único do novo NFT cunhado.
+     */
+    function mintNinetailsNL(address destinatario, string memory tokenURI)
+        public
+        returns (uint256)
+    {
+        // Incrementa a contagem para obter o próximo ID de token único
+        _tokenIds.increment();
+
+        uint256 novoItemId = _tokenIds.current();
+        
+        // Minta o token (cria e atribui)
+        _mint(destinatario, novoItemId);
+        
+        // Define o URI para os metadados do token
+        _setTokenURI(novoItemId, tokenURI);
+
+        return novoItemId;
+    }
+}

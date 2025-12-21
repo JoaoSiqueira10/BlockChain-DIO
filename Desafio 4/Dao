@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+// Importa interfaces e utilidades do OpenZeppelin
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+
+/**
+ * @title RaposinhaDAO
+ * @dev Contrato principal da Organizacao Autonoma Descentralizada "Raposinha".
+ * O poder de voto e determinado pelo saldo do token de governanca ERC-20.
+ */
+contract RaposinhaDAO {
+    using SafeMath for uint256;
+
+    // Endereco do Token de Governanca (Ex: Ninetails lor ou outro ERC-20)
+    IERC20 public governanceToken;
+
+    // Estrutura para uma Proposta
+    struct Proposal {
+        uint256 id;
+        string description;
+        uint256 deadline;
+        uint256 votesFor;
+        uint256 votesAgainst;
+        bool executed;
+    }
+
+    // Mapeamentos
+    mapping(uint256 => Proposal) public proposals;
+    mapping(uint256 => mapping(address => bool)) public hasVoted; // Garante 1 voto por carteira
+
+    uint256 public nextProposalId = 1;
+    uint256 public votingPeriod = 7 days; // Prazo de 7 dias para votacao
+    uint256 public constant QUORUM_PERCENT = 50; // A proposta precisa de mais de 50% dos votos "Sim"
+
+    // Eventos para rastreamento on-chain
+    event ProposalCreated(uint256 id, string description, uint256 deadline);
+    event Voted(uint256 id, address voter, bool support);
+    event ProposalExecuted(uint256 id);
+
+    /**
+     * @dev Construtor: define o endereco do token que da poder de voto.
+     * @param _tokenAddress Endereco do contrato ERC-20.
+     */
+    constructor(address _tokenAddress) {
+        governanceToken = IERC20(_tokenAddress);
+    }
+
+    /**
+     * @dev Cria uma nova proposta, aberta a votacao imediatamente.
+     * @param _description Breve descricao da proposta.
+     * @return O ID unico da nova proposta.
+     */
+    function createProposal(string memory _description) public returns (uint256) {
+        Proposal storage newProposal = proposals[nextProposalId];
+        newProposal.id = nextProposalId;
+        newProposal.description = _description;
+        newProposal.deadline = block.timestamp.add(votingPeriod);
+        newProposal.executed = false;
+
+        emit ProposalCreated(nextProposalId, _description, newProposal.deadline);
+        nextProposalId++;
+        return newProposal.id;
+    }
+
+    /**
+     * @dev Registra o voto de um usuario.
+     * O peso do voto e o saldo de tokens do usuario.
+     * @param _id ID da proposta.
+     * @param _support Voto: 'true' para Sim (a favor), 'false' para Nao (contra).
+     */
+    function vote(uint256 _id, bool _support) public {
+        Proposal storage proposal = proposals[_id];
+
+        // Validacoes
+        require(proposal.id > 0, "Proposta nao existe.");
+        require(block.timestamp < proposal.deadline, "Votacao encerrada.");
+        require(!hasVoted[_id][msg.sender], "Voce ja votou nesta proposta.");
+
+        // Poder de voto = Saldo de tokens do usuario
+        uint256 voteWeight = governanceToken.balanceOf(msg.sender);
+        require(voteWeight > 0, "Saldo de tokens Raposinha insuficiente para votar.");
+
+        // Marca o voto e incrementa a contagem
+        hasVoted[_id][msg.sender] = true;
+
+        if (_support) {
+            proposal.votesFor = proposal.votesFor.add(voteWeight);
+        } else {
+            proposal.votesAgainst = proposal.votesAgainst.add(voteWeight);
+        }
+
+        emit Voted(_id, msg.sender, _support);
+    }
+
+    /**
+     * @dev Executa a proposta se ela foi aprovada pelo quorum e o prazo expirou.
+     * @param _id ID da proposta.
+     */
+    function executeProposal(uint256 _id) public {
+        Proposal storage proposal = proposals[_id];
+
+        // Validacoes
+        require(proposal.id > 0, "Proposta nao existe.");
+        require(block.timestamp >= proposal.deadline, "Votacao ainda em andamento.");
+        require(!proposal.executed, "Proposta ja executada.");
+
+        // Regra de Quorum Simples: Votos 'Sim' > 50% dos votos totais
+        uint256 totalVotes = proposal.votesFor.add(proposal.votesAgainst);
+        
+        // Verifica se a proporcao de votos 'Sim' e maior que a porcentagem de quorum
+        require(proposal.votesFor.mul(100) > totalVotes.mul(QUORUM_PERCENT), "Quorum insuficiente para aprovacao.");
+
+        // Nenhuma acao 'on-chain' real ocorre aqui, apenas a marcacao de sucesso.
+        proposal.executed = true;
+
+        emit ProposalExecuted(_id);
+    }
+
+    /**
+     * @dev Visualiza os resultados de uma proposta.
+     */
+    function getProposalResults(uint256 _id) public view returns (uint256 votesFor, uint256 votesAgainst, uint256 deadline, bool executed) {
+        Proposal storage proposal = proposals[_id];
+        return (
